@@ -32,7 +32,7 @@ describe("SafeLite", () => {
     });
   });
 
-  describe("execute transaction", () => {
+  describe("sign/execute transaction", () => {
     let safeLite: Contract;
     let owner1:SignerWithAddress;
     let owner2:SignerWithAddress; 

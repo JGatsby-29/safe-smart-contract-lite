@@ -12,6 +12,7 @@ pragma solidity >=0.8.0 <0.9.0;
 // pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "./SafeLiteAddressBook.sol";
 
 contract SafeLite {
     using ECDSA for bytes32;
@@ -34,7 +35,7 @@ contract SafeLite {
     uint public signaturesRequired;
     uint public nonce;
     uint public chainId;
-    address public multiSigWalletAddress;
+    SafeLiteAddressBook public safeLiteAddressBook;
 
     struct Transaction {
         address payable to;
@@ -47,8 +48,12 @@ contract SafeLite {
 
     mapping(uint256 => Transaction) public transactions ;
 
+    address constant SAFE_LITE_ADDRESS_BOOK = 0x28A56395523AA1feEf1CAc427FbfA5E8b4767F91;
+
     constructor(uint256 _chainId, address[] memory _owners, uint _signaturesRequired) {
         require(_signaturesRequired > 0, "constructor: must be non-zero sigs required");
+        safeLiteAddressBook = SafeLiteAddressBook(SAFE_LITE_ADDRESS_BOOK);
+
         signaturesRequired = _signaturesRequired;
         for (uint i = 0; i < _owners.length; i++) {
             address owner = _owners[i];
@@ -56,10 +61,10 @@ contract SafeLite {
             require(!isOwner[owner], "constructor: owner not unique");
             isOwner[owner] = true;
             owners.push(owner);
+            safeLiteAddressBook.recordWallet(owner, address(this));
             emit Owner(owner, isOwner[owner]);
         }
         chainId = _chainId;
-        multiSigWalletAddress = address(this);
     }
 
     modifier onlySelf() {
@@ -148,24 +153,19 @@ contract SafeLite {
     function executeTransaction(uint256 _nonce) internal {
         Transaction storage transaction = transactions[_nonce];
 
-        require(transaction.signatureCount >= signaturesRequired, "executeTransaction: not enough valid signatures");
         require(!transaction.executed, "executeTransaction: transaction already executed");
-
-        transaction.executed = true;
-        nonce++;
 
         (bool success, bytes memory result) = transaction.to.call{value: transaction.value}(transaction.data);
         require(success, "executeTransaction: tx failed");
+
+        transaction.executed = true;
+        nonce++;
 
         emit ExecuteTransaction(msg.sender, transaction.to, transaction.value, transaction.data, _nonce, keccak256(abi.encodePacked(transaction.to, transaction.value, transaction.data)), result);
     }
 
     function recover(bytes32 _hash, bytes memory _signature) public pure returns (address) {
         return _hash.toEthSignedMessageHash().recover(_signature);
-    }
-
-    function getMultiSigWalletAddress() public view returns (address) {
-        return multiSigWalletAddress;
     }
 
     function getTransaction(uint256 transactionId) public view returns (address, uint256, bytes memory, bool, uint256) {
@@ -187,7 +187,7 @@ contract SafeLite {
         return transactions[transactionId].signatureCount;
     }
 
-    function getBalance() public view returns (uint256) {
+    function getBalance() public view returns (uint256){
         return address(this).balance;
     }
 
