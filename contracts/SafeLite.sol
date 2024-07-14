@@ -28,7 +28,7 @@ contract SafeLite {
         bytes result
     );
     event Owner(address indexed owner, bool added);
-    event TransactionSigned(address by, uint256 nonce, uint256 totalSignatures);
+    event TransactionSigned(address by, uint256 nonce, uint256 totalSignatures, bool isApproved);
 
     mapping(address => bool) public isOwner;
     address[] public owners;
@@ -42,13 +42,16 @@ contract SafeLite {
         uint256 value;
         bytes data;
         bool executed;
-        uint256 signatureCount;
-        mapping(address => bool) signatures;
+        uint256 approvalCount;
+        uint256 rejectionCount;
+        bool rejected;
+        mapping(address => bool) approvals;
+        mapping(address => bool) rejections;
     }
 
     mapping(uint256 => Transaction) public transactions ;
 
-    address constant SAFE_LITE_ADDRESS_BOOK = 0x28A56395523AA1feEf1CAc427FbfA5E8b4767F91;
+    address constant SAFE_LITE_ADDRESS_BOOK = 0x2CDDB72c47596e320d84b653B2d6aE3279a68AAf;
 
     constructor(uint256 _chainId, address[] memory _owners, uint _signaturesRequired) {
         require(_signaturesRequired > 0, "constructor: must be non-zero sigs required");
@@ -79,6 +82,7 @@ contract SafeLite {
         isOwner[newSigner] = true;
         owners.push(newSigner);
         signaturesRequired = newSignaturesRequired;
+        safeLiteAddressBook.recordWallet(newSigner, address(this));
         emit Owner(newSigner, isOwner[newSigner]);
     }
 
@@ -95,6 +99,7 @@ contract SafeLite {
             }
         }
         signaturesRequired = newSignaturesRequired;
+        safeLiteAddressBook.removeWallet(oldSigner, address(this));
         emit Owner(oldSigner, isOwner[oldSigner]);
     }
 
@@ -117,7 +122,8 @@ contract SafeLite {
         address payable to,
         uint256 value,
         bytes memory data,
-        bytes memory signature
+        bytes memory signature,
+        bool isApproved
     ) public {
         require(isOwner[msg.sender], "signTransaction: only owners can initiate or sign transactions");
 
@@ -126,7 +132,9 @@ contract SafeLite {
             transactions[nonce].value = value;
             transactions[nonce].data = data;
             transactions[nonce].executed = false;
-            transactions[nonce].signatureCount = 0;
+            transactions[nonce].approvalCount = 0;
+            transactions[nonce].rejectionCount = 0;
+            transactions[nonce].rejected = false;
         }
 
         Transaction storage transaction = transactions[_nonce];
@@ -136,16 +144,28 @@ contract SafeLite {
         bytes32 hash = getTransactionHash(_nonce, to, value, data);
         address signer = hash.toEthSignedMessageHash().recover(signature);
 
-        // signer가 owner인지 체크
         require(isOwner[signer], "Signature is not from an owner");
-        require(!transaction.signatures[signer], "Signature already recorded");
+        require(!transaction.approvals[signer] && !transaction.rejections[signer], "Signature already recorded");
 
-        transaction.signatures[signer] = true;
-        transaction.signatureCount++;
+        if (isApproved) {
+            require(!transaction.approvals[signer], "Approval signature already recorded");
+            transaction.approvals[signer] = true;
+            transaction.approvalCount++;
+        } else {
+            require(!transaction.rejections[signer], "Rejection signature already recorded");
+            transaction.rejections[signer] = true;
+            transaction.rejectionCount++;
+        }
 
-        emit TransactionSigned(signer, _nonce, transaction.signatureCount);
+        emit TransactionSigned(signer, _nonce, isApproved ? transaction.approvalCount : transaction.rejectionCount, isApproved);
 
-        if (transaction.signatureCount >= signaturesRequired) {
+        if (owners.length - transaction.rejectionCount < signaturesRequired) {
+            transaction.rejected = true;
+            nonce++;
+            return;
+        }
+
+        if (transaction.approvalCount >= signaturesRequired) {
             executeTransaction(_nonce);
         }
     }
@@ -168,14 +188,16 @@ contract SafeLite {
         return _hash.toEthSignedMessageHash().recover(_signature);
     }
 
-    function getTransaction(uint256 transactionId) public view returns (address, uint256, bytes memory, bool, uint256) {
+    function getTransaction(uint256 transactionId) public view returns (address, uint256, bytes memory, bool, uint256, uint256, bool) {
         Transaction storage transaction = transactions[transactionId];
         return (
             transaction.to,
             transaction.value,
             transaction.data,
             transaction.executed,
-            transaction.signatureCount
+            transaction.approvalCount,
+            transaction.rejectionCount,
+            transaction.rejected
         );
     }
 
@@ -183,12 +205,27 @@ contract SafeLite {
         return owners;
     } 
 
-    function getSignatureCount(uint256 transactionId) public view returns (uint256) {
-        return transactions[transactionId].signatureCount;
+    function getApprovalCount(uint256 transactionId) public view returns (uint256) {
+        return transactions[transactionId].approvalCount;
     }
 
-    function getBalance() public view returns (uint256){
+    function getRejectionCount(uint256 transactionId) public view returns (uint256) {
+        return transactions[transactionId].rejectionCount;
+    }
+
+    function getBalance() public view returns (uint256) {
         return address(this).balance;
+    }
+
+    function getRequiredSignatures() public view returns (uint) {
+        return signaturesRequired;
+    }
+
+    function hasSigned(uint256 _nonce, address signer) public view returns (bool) {
+        require(isOwner[signer], "hasSigned: not an owner");
+
+        Transaction storage transaction = transactions[_nonce];
+        return transaction.approvals[signer] || transaction.rejections[signer];
     }
 
     receive() external payable {
