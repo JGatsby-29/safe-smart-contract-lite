@@ -51,11 +51,11 @@ contract SafeLite {
 
     mapping(uint256 => Transaction) public transactions ;
 
-    address constant SAFE_LITE_ADDRESS_BOOK = 0x2CDDB72c47596e320d84b653B2d6aE3279a68AAf;
+    // address constant SAFE_LITE_ADDRESS_BOOK = 0x2CDDB72c47596e320d84b653B2d6aE3279a68AAf;
 
     constructor(uint256 _chainId, address[] memory _owners, uint _signaturesRequired) {
         require(_signaturesRequired > 0, "constructor: must be non-zero sigs required");
-        safeLiteAddressBook = SafeLiteAddressBook(SAFE_LITE_ADDRESS_BOOK);
+        // safeLiteAddressBook = SafeLiteAddressBook(SAFE_LITE_ADDRESS_BOOK);
 
         signaturesRequired = _signaturesRequired;
         for (uint i = 0; i < _owners.length; i++) {
@@ -64,7 +64,7 @@ contract SafeLite {
             require(!isOwner[owner], "constructor: owner not unique");
             isOwner[owner] = true;
             owners.push(owner);
-            safeLiteAddressBook.recordWallet(owner, address(this));
+            // safeLiteAddressBook.recordWallet(owner, address(this));
             emit Owner(owner, isOwner[owner]);
         }
         chainId = _chainId;
@@ -82,7 +82,7 @@ contract SafeLite {
         isOwner[newSigner] = true;
         owners.push(newSigner);
         signaturesRequired = newSignaturesRequired;
-        safeLiteAddressBook.recordWallet(newSigner, address(this));
+        // safeLiteAddressBook.recordWallet(newSigner, address(this));
         emit Owner(newSigner, isOwner[newSigner]);
     }
 
@@ -99,7 +99,7 @@ contract SafeLite {
             }
         }
         signaturesRequired = newSignaturesRequired;
-        safeLiteAddressBook.removeWallet(oldSigner, address(this));
+        // safeLiteAddressBook.removeWallet(oldSigner, address(this));
         emit Owner(oldSigner, isOwner[oldSigner]);
     }
 
